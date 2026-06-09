@@ -50,6 +50,17 @@ TEST(RunCliTest, UnknownCommandIsUsageError) {
     EXPECT_NE(err.str().find("Unknown command"), std::string::npos);
 }
 
+TEST(RunCliTest, LeadingOptionBeforeCommandIsClearError) {
+    std::ostringstream out;
+    std::ostringstream err;
+    int code =
+        tsfile_cli::run_cli({"-f", "json", "meta", "data.tsfile"}, out, err);
+    EXPECT_EQ(code, 1);
+    EXPECT_NE(err.str().find("command must come before options"),
+              std::string::npos)
+        << err.str();
+}
+
 TEST(ParseArgsTest, CommandAndFilePositional) {
     auto p = tsfile_cli::parse_args({"ls", "data.tsfile"});
     EXPECT_TRUE(p.error.empty());
@@ -64,8 +75,7 @@ TEST(ParseArgsTest, FormatFlagParsed) {
 }
 
 TEST(ParseArgsTest, MeasurementsSplitOnComma) {
-    auto p =
-        tsfile_cli::parse_args({"select", "-m", "s1,s2,s3", "data.tsfile"});
+    auto p = tsfile_cli::parse_args({"cat", "-m", "s1,s2,s3", "data.tsfile"});
     ASSERT_EQ(p.measurements.size(), 3u);
     EXPECT_EQ(p.measurements[1], "s2");
 }
@@ -97,6 +107,33 @@ TEST(ParseArgsTest, MissingFileIsAllowedAtParseTime) {
     EXPECT_TRUE(p.error.empty());
     EXPECT_EQ(p.command, "ls");
     EXPECT_TRUE(p.file.empty());
+}
+
+TEST(ParseArgsTest, WriteFlagsParsed) {
+    auto p = tsfile_cli::parse_args({"write", "--table", "t1", "--columns",
+                                     "s1:INT64:field", "-o", "out.tsfile", "-v",
+                                     "--header-match", "in.csv"});
+    EXPECT_TRUE(p.error.empty());
+    EXPECT_EQ(p.command, "write");
+    EXPECT_EQ(p.table, "t1");
+    EXPECT_EQ(p.columns, "s1:INT64:field");
+    EXPECT_EQ(p.output, "out.tsfile");
+    EXPECT_TRUE(p.verbose);
+    EXPECT_TRUE(p.header_match);
+    EXPECT_EQ(p.file, "in.csv");
+}
+
+TEST(ParseArgsTest, OutputFlagNeedsValue) {
+    auto p = tsfile_cli::parse_args({"write", "-o"});
+    EXPECT_FALSE(p.error.empty());
+}
+
+TEST(ParseArgsTest, DashIsStdinPositional) {
+    auto p =
+        tsfile_cli::parse_args({"write", "--table", "t1", "--columns",
+                                "s1:INT64:field", "-o", "out.tsfile", "-"});
+    EXPECT_TRUE(p.error.empty());
+    EXPECT_EQ(p.file, "-");
 }
 
 TEST(ParseArgsTest, SeedFlagParsed) {
@@ -142,18 +179,4 @@ TEST(RunCliTest, OffsetOnSampleIsUsageError) {
     EXPECT_EQ(code, 1);
     EXPECT_NE(err.str().find("--offset is not valid for sample"),
               std::string::npos);
-}
-
-TEST(RunCliTest, NewCommandsAreExplicitlyUnimplementedBeforeReaderOpen) {
-    for (const char* command : {"meta", "count", "sample"}) {
-        std::ostringstream out;
-        std::ostringstream err;
-        int code = tsfile_cli::run_cli(
-            {command, "definitely_missing.tsfile"}, out, err);
-        EXPECT_EQ(code, 1) << command;
-        EXPECT_NE(err.str().find("command not implemented yet"),
-                  std::string::npos)
-            << command;
-        EXPECT_NE(err.str().find(command), std::string::npos) << command;
-    }
 }

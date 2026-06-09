@@ -79,6 +79,14 @@ ParsedArgs parse_args(const std::vector<std::string>& args) {
     if (p.command == "--help" || p.command == "-h") {
         p.help = true;
     }
+    // The subcommand must come first. A leading option means it was omitted;
+    // say so explicitly instead of failing later with a confusing message about
+    // the first real positional argument.
+    if (p.command.size() > 1 && p.command[0] == '-' && !p.version && !p.help) {
+        p.error = "the command must come before options (got option '" +
+                  p.command + "'); run with --help for usage";
+        return p;
+    }
 
     size_t i = 1;
     auto need_value = [&](const std::string& flag, std::string& dst) -> bool {
@@ -120,7 +128,7 @@ ParsedArgs parse_args(const std::vector<std::string>& args) {
                 return p;
             }
             if (!parse_ll(val, p.limit)) {
-                p.error = "Invalid --limit: " + val;
+                p.error = "Invalid -n/--limit: " + val;
                 return p;
             }
         } else if (a == "--offset") {
@@ -158,6 +166,18 @@ ParsedArgs parse_args(const std::vector<std::string>& args) {
                 return p;
             }
             p.has_seed = true;
+        } else if (a == "-o" || a == "--output") {
+            if (!need_value(a, p.output)) {
+                return p;
+            }
+        } else if (a == "--columns") {
+            if (!need_value(a, p.columns)) {
+                return p;
+            }
+        } else if (a == "-v" || a == "--verbose") {
+            p.verbose = true;
+        } else if (a == "--header-match") {
+            p.header_match = true;
         } else if (a == "--model") {
             if (!need_value(a, val)) {
                 return p;
@@ -171,9 +191,11 @@ ParsedArgs parse_args(const std::vector<std::string>& args) {
             p.no_header = true;
         } else if (a == "-h" || a == "--help") {
             p.help = true;
+            return p;  // help wins; stop parsing the rest
         } else if (a == "--version") {
             p.version = true;
-        } else if (!a.empty() && a[0] == '-') {
+            return p;  // version wins; stop parsing the rest
+        } else if (a.size() > 1 && a[0] == '-') {
             p.error = "Unknown flag: " + a;
             return p;
         } else {
